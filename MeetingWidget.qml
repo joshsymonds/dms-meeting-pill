@@ -241,7 +241,11 @@ PluginComponent {
                 // so a fitting title just renders once, centered.
                 id: titleClip
                 visible: root.haveData
-                width: root.widgetThickness
+                // Inset 4px on each side so the marquee text doesn't
+                // graze the pill's rounded edge; matches the visual
+                // breathing room the other widgets get by virtue of
+                // having natural content narrower than the pill.
+                width: root.widgetThickness - 8
                 height: titleText.implicitHeight
                 clip: true
                 anchors.horizontalCenter: parent.horizontalCenter

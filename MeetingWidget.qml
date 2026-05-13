@@ -107,9 +107,10 @@ PluginComponent {
     }
 
     function _refreshFromFile() {
-        let raw = eventsFile.text;
-        if (typeof raw === "function")
-            raw = raw();
+        // text() is a function on FileView (not a property); calling it
+        // triggers a synchronous read under blockLoading:true and
+        // returns the file contents.
+        const raw = eventsFile.text();
         if (!raw) {
             _clear();
             return;
@@ -155,20 +156,26 @@ PluginComponent {
     }
 
     // ── File watcher ──────────────────────────────────────────────────
-    // Idiomatic DMS pattern (cribbed from SettingsData.qml):
-    //   • Path via StandardPaths from QtCore — gives us $XDG_DATA_HOME
-    //     with proper Qt-level user-config resolution, no $HOME hack
-    //   • blockLoading: true so the initial read happens on QML eval
-    //   • watchChanges + onFileChanged → reload() so updates land
-    //     immediately when morgen-fetch rewrites the file
-    //   • A 50ms debounce timer collapses the brief read/rename
-    //     filesystem-event burst from morgen-fetch's atomic write into
-    //     a single reload
+    // The working FileView contract (verified against Quickshell.Io's
+    // qmltypes and DMS's own SettingsData.qml):
+    //
+    //   • `text()` is a SYNCHRONOUS method, not a property. With
+    //     `blockLoading: true` it triggers an immediate blocking read,
+    //     returns the file contents as a string. Don't wait for an
+    //     `onLoaded` signal — call text() directly when you need data.
+    //   • `onFileChanged` fires when the watched file mutates on disk.
+    //     Re-call text() from there to refresh.
+    //   • A debounce timer coalesces morgen-fetch's atomic-rename event
+    //     burst (multiple inotify events per rename) into one refresh.
+    //
+    // DMS's SettingsData.qml drives reads from Component.onCompleted +
+    // onFileChanged; the `loaded` signal exists but the synchronous
+    // text() flow is what they actually rely on. We do the same.
     Timer {
         id: reloadDebounce
         interval: 50
         repeat: false
-        onTriggered: eventsFile.reload()
+        onTriggered: root._refreshFromFile()
     }
 
     FileView {
@@ -176,9 +183,11 @@ PluginComponent {
         path: StandardPaths.writableLocation(StandardPaths.GenericDataLocation) + "/morgen-fetch/upcoming-events.json"
         blockLoading: true
         watchChanges: true
+        printErrors: false
         onFileChanged: reloadDebounce.restart()
-        onLoaded: root._refreshFromFile()
     }
+
+    Component.onCompleted: root._refreshFromFile()
 
     Timer {
         // 1 s countdown ticker. Used by urgencyColor and _formatCountdown

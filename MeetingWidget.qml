@@ -18,8 +18,8 @@
 // Click: if the next event has a URL, xdg-open it. If not, no-op. The
 // click handler is wired through PluginComponent.pillClickAction so
 // BasePill's existing MouseArea drives it — no custom MouseArea needed.
+import QtCore
 import QtQuick
-import Quickshell
 import Quickshell.Io
 import qs.Common
 import qs.Modules.Plugins
@@ -155,24 +155,28 @@ PluginComponent {
     }
 
     // ── File watcher ──────────────────────────────────────────────────
-    // Path is interpolated from Quickshell.env("HOME") at QML eval —
-    // setting it imperatively after construction also caused
-    // "Cannot read property 'preload' of null" in FileView's internal
-    // onPathChanged, so we just commit to the eval-time string. If
-    // Quickshell.env returns falsy for any reason we fall back to a
-    // sane default. `watchChanges: true` handles reloads; no manual
-    // onFileChanged handler (no such signal on this Quickshell version).
-    readonly property string _eventsPath: (Quickshell.env("HOME") || "") + "/.local/share/morgen-fetch/upcoming-events.json"
+    // Idiomatic DMS pattern (cribbed from SettingsData.qml):
+    //   • Path via StandardPaths from QtCore — gives us $XDG_DATA_HOME
+    //     with proper Qt-level user-config resolution, no $HOME hack
+    //   • blockLoading: true so the initial read happens on QML eval
+    //   • watchChanges + onFileChanged → reload() so updates land
+    //     immediately when morgen-fetch rewrites the file
+    //   • A 50ms debounce timer collapses the brief read/rename
+    //     filesystem-event burst from morgen-fetch's atomic write into
+    //     a single reload
+    Timer {
+        id: reloadDebounce
+        interval: 50
+        repeat: false
+        onTriggered: eventsFile.reload()
+    }
 
     FileView {
         id: eventsFile
-        path: root._eventsPath
-        // preload: true is what actually triggers the read — without
-        // it, FileView defers loading until something requests text()
-        // or data(). Plus blockLoading: false keeps the read async.
-        preload: true
-        blockLoading: false
+        path: StandardPaths.writableLocation(StandardPaths.GenericDataLocation) + "/morgen-fetch/upcoming-events.json"
+        blockLoading: true
         watchChanges: true
+        onFileChanged: reloadDebounce.restart()
         onLoaded: root._refreshFromFile()
     }
 

@@ -241,14 +241,23 @@ PluginComponent {
                 // so a fitting title just renders once, centered.
                 id: titleClip
                 visible: root.haveData
-                // 2px breathing room on each side so the marquee text
-                // doesn't graze the pill's rounded edge. Wider insets
-                // looked too quarantined; this is just enough to break
-                // the visual collision with the chrome curve.
-                width: root.widgetThickness - 4
+                // DEBUG: massively oversize the clip Item to see what's
+                // actually constraining the visible marquee window. If
+                // the visible scroll area expands when width=200, then
+                // root.widgetThickness is small. If it stays narrow,
+                // something else (Column? Loader? BasePill?) is the
+                // limiting parent.
+                width: 200
                 height: titleText.implicitHeight
                 clip: true
                 anchors.horizontalCenter: parent.horizontalCenter
+
+                Rectangle {
+                    anchors.fill: parent
+                    color: "magenta"
+                    opacity: 0.25
+                    z: -1
+                }
 
                 readonly property real titleWidth: titleText.implicitWidth
                 readonly property real gap: 24   // px between text repeats

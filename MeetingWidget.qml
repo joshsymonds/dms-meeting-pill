@@ -229,85 +229,34 @@ PluginComponent {
                 anchors.horizontalCenter: parent.horizontalCenter
             }
 
-            Item {
-                // Marquee clip rectangle. Continuous scroll using the
-                // two-copy trick: render the title twice (separated by
-                // `gap`) inside a Row, animate the Row's x from 0 to
-                // -(titleWidth + gap), loop infinitely. When the
-                // animation wraps the second copy is positioned
-                // exactly where the first was at x=0, so the wrap is
-                // visually seamless — no snap, no pause, no reset
-                // flash. The second copy is `visible: needsScrolling`
-                // so a fitting title just renders once, centered.
-                id: titleClip
-                visible: root.haveData
-                // DEBUG: massively oversize the clip Item to see what's
-                // actually constraining the visible marquee window. If
-                // the visible scroll area expands when width=200, then
-                // root.widgetThickness is small. If it stays narrow,
-                // something else (Column? Loader? BasePill?) is the
-                // limiting parent.
-                width: 200
+            // DEBUG: rip out the marquee and show actual runtime values
+            // for widgetThickness / titleClip.width / parent.width so we
+            // can see what the constraint chain ACTUALLY resolves to.
+            // Magenta backdrop on the first row makes the "clip" extent
+            // unambiguous against the pill chrome.
+            Rectangle {
+                width: root.widgetThickness - 4
                 height: titleText.implicitHeight
-                clip: true
+                color: "magenta"
+                opacity: 0.4
                 anchors.horizontalCenter: parent.horizontalCenter
 
-                Rectangle {
-                    anchors.fill: parent
-                    color: "magenta"
-                    opacity: 0.25
-                    z: -1
+                StyledText {
+                    id: titleText
+                    anchors.centerIn: parent
+                    text: "tk" + Math.round(root.widgetThickness)
+                    font.pixelSize: Theme.fontSizeSmall
+                    color: "white"
+                    elide: Text.ElideNone
+                    wrapMode: Text.NoWrap
                 }
+            }
 
-                readonly property real titleWidth: titleText.implicitWidth
-                readonly property real gap: 24   // px between text repeats
-                readonly property bool needsScrolling: titleWidth > width
-                property real scrollX: 0
-
-                Row {
-                    spacing: titleClip.gap
-                    anchors.verticalCenter: parent.verticalCenter
-                    x: titleClip.needsScrolling
-                       ? -titleClip.scrollX
-                       : (titleClip.width - titleClip.titleWidth) / 2
-
-                    StyledText {
-                        id: titleText
-                        text: root.nextTitle
-                        font.pixelSize: Theme.fontSizeSmall
-                        color: root.urgencyColor
-                        // StyledText defaults to elide: ElideRight and
-                        // wrapMode: WordWrap. Both must be overridden
-                        // or the text gets shortened ("Perm…") before
-                        // the marquee can even consider scrolling.
-                        elide: Text.ElideNone
-                        wrapMode: Text.NoWrap
-                    }
-
-                    StyledText {
-                        // Second copy — invisible (and so contributes
-                        // nothing to the Row's natural width) when the
-                        // first copy already fits the clip.
-                        visible: titleClip.needsScrolling
-                        text: root.nextTitle
-                        font.pixelSize: Theme.fontSizeSmall
-                        color: root.urgencyColor
-                        elide: Text.ElideNone
-                        wrapMode: Text.NoWrap
-                    }
-                }
-
-                NumberAnimation on scrollX {
-                    running: titleClip.needsScrolling
-                    loops: Animation.Infinite
-                    from: 0
-                    to: titleClip.titleWidth + titleClip.gap
-                    // 80 ms per pixel — readable pace; previous 60 ms
-                    // felt jittery. Min 800ms so a barely-overflowing
-                    // title doesn't whip past.
-                    duration: Math.max(800, (titleClip.titleWidth + titleClip.gap) * 80)
-                    easing.type: Easing.Linear
-                }
+            StyledText {
+                text: "pw" + Math.round(parent.width)
+                font.pixelSize: Theme.fontSizeSmall
+                color: Theme.widgetTextColor
+                anchors.horizontalCenter: parent.horizontalCenter
             }
 
             StyledText {

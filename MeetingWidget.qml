@@ -108,11 +108,8 @@ PluginComponent {
 
     function _refreshFromFile() {
         let raw = eventsFile.text;
-        console.log("meetingPill: typeof eventsFile.text =", typeof raw);
         if (typeof raw === "function")
             raw = raw();
-        console.log("meetingPill: raw length =", raw ? raw.length : "<null>");
-        console.log("meetingPill: path =", root._eventsPath);
         if (!raw) {
             _clear();
             return;
@@ -120,12 +117,10 @@ PluginComponent {
         let arr;
         try {
             arr = JSON.parse(raw);
-            console.log("meetingPill: parsed", arr.length, "events");
         } catch (e) {
             // Malformed JSON — most likely we caught a write mid-rename
             // (shouldn't happen with the .tmp pattern morgen-fetch uses
             // but cheap to guard). Hold current state until next reload.
-            console.log("meetingPill: JSON.parse failed:", e);
             return;
         }
         if (!Array.isArray(arr) || arr.length === 0) {
@@ -172,19 +167,13 @@ PluginComponent {
     FileView {
         id: eventsFile
         path: root._eventsPath
-        watchChanges: true
+        // preload: true is what actually triggers the read — without
+        // it, FileView defers loading until something requests text()
+        // or data(). Plus blockLoading: false keeps the read async.
+        preload: true
         blockLoading: false
-        onLoaded: {
-            console.log("meetingPill: FileView onLoaded fired");
-            root._refreshFromFile();
-        }
-        onLoadFailed: function(error) {
-            console.log("meetingPill: FileView load failed:", error);
-        }
-    }
-
-    Component.onCompleted: {
-        console.log("meetingPill: COMPONENT LOADED, path =", root._eventsPath);
+        watchChanges: true
+        onLoaded: root._refreshFromFile()
     }
 
     Timer {

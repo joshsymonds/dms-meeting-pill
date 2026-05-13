@@ -155,13 +155,27 @@ PluginComponent {
     }
 
     // ── File watcher ──────────────────────────────────────────────────
+    // Path: resolve $HOME at component-completion time rather than as a
+    // property binding so FileView's internal onPathChanged handler
+    // doesn't fire against a null/undefined value during construction
+    // (observed as "Cannot read property 'preload' of null" in QML
+    // logs). Quickshell.env(...) returning anything but a string at
+    // binding-eval time blows up FileView's internal `this.path`
+    // tracking; setting once in Component.onCompleted sidesteps that.
+    //
+    // We rely on watchChanges + onLoaded for reloads. No explicit
+    // onFileChanged handler — FileView has no such signal in this
+    // version of Quickshell; setting watchChanges=true is the whole
+    // reload contract.
     FileView {
         id: eventsFile
-        path: Quickshell.env("HOME") + "/.local/share/morgen-fetch/upcoming-events.json"
         watchChanges: true
         blockLoading: false
         onLoaded: root._refreshFromFile()
-        onFileChanged: reload()
+    }
+
+    Component.onCompleted: {
+        eventsFile.path = Quickshell.env("HOME") + "/.local/share/morgen-fetch/upcoming-events.json";
     }
 
     Timer {

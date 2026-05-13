@@ -229,34 +229,68 @@ PluginComponent {
                 anchors.horizontalCenter: parent.horizontalCenter
             }
 
-            // DEBUG: rip out the marquee and show actual runtime values
-            // for widgetThickness / titleClip.width / parent.width so we
-            // can see what the constraint chain ACTUALLY resolves to.
-            // Magenta backdrop on the first row makes the "clip" extent
-            // unambiguous against the pill chrome.
-            Rectangle {
+            Item {
+                // Marquee clip rectangle. Continuous scroll using the
+                // two-copy trick: render the title twice butt-jointed
+                // (gap = 0) inside a Row, animate the Row's x from 0 to
+                // -titleWidth, loop infinitely. With gap = 0 the loop
+                // seam is invisible — both copies are the same text,
+                // so the moment the animation snaps from x=-titleWidth
+                // back to x=0, the visible content is unchanged (we're
+                // looking at the start of copy 2 vs. the start of
+                // copy 1, which render identically).
+                //
+                // Earlier iterations used gap = 24 to "separate" the
+                // copies for visual clarity — but at a 32 px clip
+                // width, a 24 px gap meant ~24% of the animation cycle
+                // showed mostly empty space with one or two letters
+                // hovering at the clip edge. That read as "huge
+                // padding" rather than a marquee.
+                id: titleClip
+                visible: root.haveData
                 width: root.widgetThickness - 4
                 height: titleText.implicitHeight
-                color: "magenta"
-                opacity: 0.4
+                clip: true
                 anchors.horizontalCenter: parent.horizontalCenter
 
-                StyledText {
-                    id: titleText
-                    anchors.centerIn: parent
-                    text: "tk" + Math.round(root.widgetThickness)
-                    font.pixelSize: Theme.fontSizeSmall
-                    color: "white"
-                    elide: Text.ElideNone
-                    wrapMode: Text.NoWrap
+                readonly property real titleWidth: titleText.implicitWidth
+                readonly property bool needsScrolling: titleWidth > width
+                property real scrollX: 0
+
+                Row {
+                    spacing: 0
+                    anchors.verticalCenter: parent.verticalCenter
+                    x: titleClip.needsScrolling
+                       ? -titleClip.scrollX
+                       : (titleClip.width - titleClip.titleWidth) / 2
+
+                    StyledText {
+                        id: titleText
+                        text: root.nextTitle
+                        font.pixelSize: Theme.fontSizeSmall
+                        color: root.urgencyColor
+                        elide: Text.ElideNone
+                        wrapMode: Text.NoWrap
+                    }
+
+                    StyledText {
+                        visible: titleClip.needsScrolling
+                        text: root.nextTitle
+                        font.pixelSize: Theme.fontSizeSmall
+                        color: root.urgencyColor
+                        elide: Text.ElideNone
+                        wrapMode: Text.NoWrap
+                    }
                 }
-            }
 
-            StyledText {
-                text: "pw" + Math.round(parent.width)
-                font.pixelSize: Theme.fontSizeSmall
-                color: Theme.widgetTextColor
-                anchors.horizontalCenter: parent.horizontalCenter
+                NumberAnimation on scrollX {
+                    running: titleClip.needsScrolling
+                    loops: Animation.Infinite
+                    from: 0
+                    to: titleClip.titleWidth
+                    duration: Math.max(800, titleClip.titleWidth * 80)
+                    easing.type: Easing.Linear
+                }
             }
 
             StyledText {

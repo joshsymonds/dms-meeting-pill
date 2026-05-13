@@ -1,26 +1,39 @@
 # dms-meeting-pill
 
 A [DankMaterialShell](https://github.com/AvengeMedia/DankMaterialShell) bar pill
-showing the countdown to your next upcoming calendar event. Reads
-[`khal`](https://github.com/pimutils/khal) on a timer — so it works with any
-vdir-format calendar source, including [`vdirsyncer`](https://github.com/pimutils/vdirsyncer),
-[`morgen-fetch`](https://github.com/joshsymonds/nix-config/tree/main/pkgs/morgen-fetch),
-self-hosted CalDAV, etc.
+showing the next upcoming calendar event — countdown, truncated title,
+urgency color, and one-click join via the event's virtual-room URL.
+
+Reads `~/.local/share/morgen-fetch/upcoming-events.json` produced by
+[`morgen-fetch`](https://github.com/joshsymonds/nix-config/tree/main/pkgs/morgen-fetch).
+Updates instantly when morgen-fetch writes a new snapshot (FileView with
+`watchChanges`).
 
 ## What it looks like
 
-Vertical bar (default DMS):
+Vertical bar (default DMS), 3 stacked rows:
 
 ```
-🗓       ← event_upcoming (calendar with arrow into it)
+🗓       ← event_upcoming icon, tinted by urgency
+Stand…  ← title truncated to 5 chars + ellipsis
 12m     ← countdown to next event
 ```
 
+**Urgency coloring** (applied to icon + text):
+
+- Normal (`>15 min` away): `Theme.widgetText` / `Theme.widgetIcon`
+- Warning (`5–15 min`): `Theme.warning` (yellow)
+- Error (`<5 min` or happening): `Theme.error` (red)
+
+**Click**: if the next event has a virtual-room URL (Morgen extracts
+Zoom/Meet links from event descriptions), clicking the pill invokes
+`xdg-open` on it. If there's no URL, the click is a no-op.
+
 Countdown formatting:
 
-- `<1m` — under a minute (or already started)
-- `12m` — under an hour, displayed in minutes
-- `2h` — under a day, displayed in hours
+- `<1m` — under a minute
+- `12m` — under an hour, in minutes
+- `2h` — under a day, in hours
 - `2d` — more than a day
 - `now` — start time has passed (currently happening)
 
@@ -29,9 +42,6 @@ Horizontal bar:
 ```
 🗓  12m: Standup
 ```
-
-All-day events (status markers like "PTO", holidays) are skipped — they're
-not "meetings" you need a countdown to.
 
 ## Install
 
@@ -43,7 +53,9 @@ git clone https://github.com/joshsymonds/dms-meeting-pill \
 dms ipc call plugins reload meetingPill
 ```
 
-Make sure `khal` is on `$PATH` and configured to read your calendar vdirs.
+Make sure `morgen-fetch` (or another tool producing
+`~/.local/share/morgen-fetch/upcoming-events.json` in the same schema)
+is running. `xdg-open` must be on `$PATH` for click-to-join to work.
 
 ### Nix flake (NixOS via the DMS home-manager module)
 
@@ -71,25 +83,23 @@ All optional.
 
 | Key | Default | Description |
 |---|---|---|
-| `intervalMs` | `60000` | khal poll interval in milliseconds. Lower if you want the countdown closer to wall-clock accurate; higher if khal queries feel expensive. |
-| `lookahead` | `"48h"` | How far ahead to scan, in any khal-accepted relative duration (`6h`, `2d`, `1w`). Events further out generally aren't actionable glance-data. |
+| `maxTitleChars` | `5` | Title truncation budget in the vertical pill. `5` + `…` = 6 chars; fits inside DMS's default 36px pill width at `Theme.fontSizeSmall`. Bump if you have a wider bar. |
 
 ## How it works
 
-Every `intervalMs`:
+The plugin watches `~/.local/share/morgen-fetch/upcoming-events.json` via
+`FileView { watchChanges: true }`. On each load (and on each subsequent
+file change), it parses the array, finds the first event whose `start`
+is in the future, and updates `nextTitle` / `nextStart` / `nextUrl` /
+`haveData` properties that the QML pill content binds against.
 
-```
-khal list --json title --json start-date --json start-time --notstarted now <lookahead>
-```
+A 1-second `Timer` updates a `countdownNow` property used by the
+countdown formatter AND by the urgency-color binding, so the displayed
+minute ticks down and the color escalates through warning → error as
+the meeting approaches.
 
-khal emits one JSON array per day in the range, separated by newlines.
-The plugin parses each line, flattens, skips all-day events (empty
-`start-time`), sorts by start, and takes the first event whose start is
-in the future as "next."
-
-A second 1-second timer reads `Date.now()` into a property the
-countdown text depends on, so the displayed minute ticks down between
-khal re-fetches without further polling.
+The click handler is wired through `PluginComponent.pillClickAction`
+(BasePill's built-in click signal) — no custom MouseArea.
 
 ## License
 

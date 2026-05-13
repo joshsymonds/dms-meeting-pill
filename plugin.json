@@ -1,0 +1,13 @@
+{
+	"id": "meetingPill",
+	"name": "Next Meeting",
+	"component": "MeetingWidget.qml",
+	"capabilities": ["dankbar-widget"],
+	"category": "productivity",
+	"repo": "https://github.com/joshsymonds/dms-meeting-pill",
+	"author": "Josh Symonds",
+	"description": "Countdown to your next upcoming calendar event, read from khal (and therefore from any vdir-backed calendar source — vdirsyncer, morgen-fetch, etc.). Shows time-until on a vertical bar; pair with morgen-fetch for a Morgen-fed pipeline.",
+	"dependencies": ["khal"],
+	"compositors": ["any"],
+	"distro": ["any"]
+}

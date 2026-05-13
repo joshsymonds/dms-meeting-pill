@@ -230,24 +230,29 @@ PluginComponent {
             }
 
             Item {
-                // Marquee clip rectangle. Width = pill width (so the
-                // StyledText inside is what defines scrollable extent);
-                // height = font size so the row is exactly as tall as
-                // one line of text.
+                // Marquee clip rectangle. Width = pill width — NOT
+                // parent.width (parent is Column whose width is just
+                // max(child.implicitWidth) and would be tiny). Height
+                // = title's font line height.
                 visible: root.haveData
-                width: parent.width
+                width: root.widgetThickness
                 height: titleText.implicitHeight
                 clip: true
+                anchors.horizontalCenter: parent.horizontalCenter
 
                 StyledText {
                     id: titleText
                     text: root.nextTitle
                     font.pixelSize: Theme.fontSizeSmall
                     color: root.urgencyColor
+
+                    // StyledText defaults to elide: ElideRight AND
+                    // wrapMode: WordWrap. Both need explicit override
+                    // here or the text gets shortened to "Perm…"
+                    // before the marquee can even consider scrolling.
+                    elide: Text.ElideNone
                     wrapMode: Text.NoWrap
 
-                    // Scroll only when the text doesn't fit. Otherwise
-                    // anchor centered.
                     readonly property bool needsScrolling: implicitWidth > parent.width
                     property real scrollOffset: 0
 

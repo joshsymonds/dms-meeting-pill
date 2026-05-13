@@ -252,37 +252,24 @@ PluginComponent {
                 readonly property bool needsScrolling: titleWidth > width
                 property real scrollX: 0
 
-                Row {
-                    spacing: titleClip.gap
+                // DEBUG: solid rectangle filling the Item's bounds so
+                // we can SEE exactly how wide titleClip is rendering.
+                Rectangle {
+                    anchors.fill: parent
+                    color: "magenta"
+                }
+                // Title text positioned absolutely (overlay on the
+                // magenta rect) so we can see whether IT's clipped
+                // to the rect's bounds or escaping.
+                StyledText {
+                    id: titleText
+                    text: root.nextTitle
+                    font.pixelSize: Theme.fontSizeSmall
+                    color: "white"
+                    elide: Text.ElideNone
+                    wrapMode: Text.NoWrap
                     anchors.verticalCenter: parent.verticalCenter
-                    x: titleClip.needsScrolling
-                       ? -titleClip.scrollX
-                       : (titleClip.width - titleClip.titleWidth) / 2
-
-                    StyledText {
-                        id: titleText
-                        text: root.nextTitle
-                        font.pixelSize: Theme.fontSizeSmall
-                        color: root.urgencyColor
-                        // StyledText defaults to elide: ElideRight and
-                        // wrapMode: WordWrap. Both must be overridden
-                        // or the text gets shortened ("Perm…") before
-                        // the marquee can even consider scrolling.
-                        elide: Text.ElideNone
-                        wrapMode: Text.NoWrap
-                    }
-
-                    StyledText {
-                        // Second copy — invisible (and so contributes
-                        // nothing to the Row's natural width) when the
-                        // first copy already fits the clip.
-                        visible: titleClip.needsScrolling
-                        text: root.nextTitle
-                        font.pixelSize: Theme.fontSizeSmall
-                        color: root.urgencyColor
-                        elide: Text.ElideNone
-                        wrapMode: Text.NoWrap
-                    }
+                    x: 0
                 }
 
                 NumberAnimation on scrollX {

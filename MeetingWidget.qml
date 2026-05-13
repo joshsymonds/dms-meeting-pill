@@ -230,66 +230,70 @@ PluginComponent {
             }
 
             Item {
-                // Marquee clip rectangle. Width = pill width — NOT
-                // parent.width (parent is Column whose width is just
-                // max(child.implicitWidth) and would be tiny). Height
-                // = title's font line height.
+                // Marquee clip rectangle. Continuous scroll using the
+                // two-copy trick: render the title twice (separated by
+                // `gap`) inside a Row, animate the Row's x from 0 to
+                // -(titleWidth + gap), loop infinitely. When the
+                // animation wraps the second copy is positioned
+                // exactly where the first was at x=0, so the wrap is
+                // visually seamless — no snap, no pause, no reset
+                // flash. The second copy is `visible: needsScrolling`
+                // so a fitting title just renders once, centered.
+                id: titleClip
                 visible: root.haveData
                 width: root.widgetThickness
                 height: titleText.implicitHeight
                 clip: true
                 anchors.horizontalCenter: parent.horizontalCenter
 
-                StyledText {
-                    id: titleText
-                    text: root.nextTitle
-                    font.pixelSize: Theme.fontSizeSmall
-                    color: root.urgencyColor
+                readonly property real titleWidth: titleText.implicitWidth
+                readonly property real gap: 24   // px between text repeats
+                readonly property bool needsScrolling: titleWidth > width
+                property real scrollX: 0
 
-                    // StyledText defaults to elide: ElideRight AND
-                    // wrapMode: WordWrap. Both need explicit override
-                    // here or the text gets shortened to "Perm…"
-                    // before the marquee can even consider scrolling.
-                    elide: Text.ElideNone
-                    wrapMode: Text.NoWrap
-
-                    readonly property bool needsScrolling: implicitWidth > parent.width
-                    property real scrollOffset: 0
-
+                Row {
+                    spacing: titleClip.gap
                     anchors.verticalCenter: parent.verticalCenter
-                    x: needsScrolling ? -scrollOffset : (parent.width - implicitWidth) / 2
+                    x: titleClip.needsScrolling
+                       ? -titleClip.scrollX
+                       : (titleClip.width - titleClip.titleWidth) / 2
 
-                    onTextChanged: {
-                        scrollOffset = 0;
-                        scrollAnimation.restart();
+                    StyledText {
+                        id: titleText
+                        text: root.nextTitle
+                        font.pixelSize: Theme.fontSizeSmall
+                        color: root.urgencyColor
+                        // StyledText defaults to elide: ElideRight and
+                        // wrapMode: WordWrap. Both must be overridden
+                        // or the text gets shortened ("Perm…") before
+                        // the marquee can even consider scrolling.
+                        elide: Text.ElideNone
+                        wrapMode: Text.NoWrap
                     }
 
-                    SequentialAnimation {
-                        id: scrollAnimation
-                        running: titleText.needsScrolling
-                        loops: Animation.Infinite
-
-                        PauseAnimation { duration: 1500 }
-                        NumberAnimation {
-                            target: titleText
-                            property: "scrollOffset"
-                            from: 0
-                            to: titleText.implicitWidth - titleText.parent.width + 4
-                            // ~60 ms per pixel — slow enough to read,
-                            // not so slow the pill feels stuck. Min 1s
-                            // so very-short overflows don't tear past.
-                            duration: Math.max(1000, (titleText.implicitWidth - titleText.parent.width + 4) * 60)
-                            easing.type: Easing.Linear
-                        }
-                        PauseAnimation { duration: 1500 }
-                        NumberAnimation {
-                            target: titleText
-                            property: "scrollOffset"
-                            to: 0
-                            duration: 300
-                            easing.type: Easing.OutCubic
-                        }
+                    StyledText {
+                        // Second copy — invisible (and so contributes
+                        // nothing to the Row's natural width) when the
+                        // first copy already fits the clip.
+                        visible: titleClip.needsScrolling
+                        text: root.nextTitle
+                        font.pixelSize: Theme.fontSizeSmall
+                        color: root.urgencyColor
+                        elide: Text.ElideNone
+                        wrapMode: Text.NoWrap
                     }
+                }
+
+                NumberAnimation on scrollX {
+                    running: titleClip.needsScrolling
+                    loops: Animation.Infinite
+                    from: 0
+                    to: titleClip.titleWidth + titleClip.gap
+                    // 80 ms per pixel — readable pace; previous 60 ms
+                    // felt jittery. Min 800ms so a barely-overflowing
+                    // title doesn't whip past.
+                    duration: Math.max(800, (titleClip.titleWidth + titleClip.gap) * 80)
+                    easing.type: Easing.Linear
                 }
             }
 

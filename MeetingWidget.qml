@@ -231,21 +231,26 @@ PluginComponent {
 
             Item {
                 // Marquee clip rectangle. Continuous scroll using the
-                // two-copy trick: render the title twice butt-jointed
-                // (gap = 0) inside a Row, animate the Row's x from 0 to
-                // -titleWidth, loop infinitely. With gap = 0 the loop
-                // seam is invisible — both copies are the same text,
-                // so the moment the animation snaps from x=-titleWidth
-                // back to x=0, the visible content is unchanged (we're
-                // looking at the start of copy 2 vs. the start of
-                // copy 1, which render identically).
+                // two-copy trick: render `title + " • "` twice
+                // butt-jointed inside a Row, animate Row.x from 0 to
+                // -(title + bullet) width, loop infinitely. The bullet
+                // baked into each copy serves as the visible separator
+                // between marquee repeats — earlier iterations tried an
+                // empty Row spacing for separation, but at a 32 px clip
+                // width even a small empty gap reads as "huge padding"
+                // with maybe one stray letter on the edge. With a bullet
+                // in the text stream, the clip is always showing
+                // glyphs — title characters most of the cycle, " • "
+                // briefly as the loop seam passes. Two identical copies
+                // mean the wrap at -bulletEndWidth back to 0 is
+                // visually unchanged (both copies are the same text);
+                // no snap, no flash.
                 //
-                // Earlier iterations used gap = 24 to "separate" the
-                // copies for visual clarity — but at a 32 px clip
-                // width, a 24 px gap meant ~24% of the animation cycle
-                // showed mostly empty space with one or two letters
-                // hovering at the clip edge. That read as "huge
-                // padding" rather than a marquee.
+                // needsScrolling is decided against the PLAIN title
+                // width (titleSizer below), independent of titleText's
+                // actual rendered text. This avoids a circular binding
+                // (titleText.text depends on needsScrolling, which
+                // would otherwise depend on titleText.implicitWidth).
                 id: titleClip
                 visible: root.haveData
                 width: root.widgetThickness - 4
@@ -253,20 +258,38 @@ PluginComponent {
                 clip: true
                 anchors.horizontalCenter: parent.horizontalCenter
 
-                readonly property real titleWidth: titleText.implicitWidth
-                readonly property bool needsScrolling: titleWidth > width
+                readonly property bool needsScrolling: titleSizer.implicitWidth > width
+                // titleText.implicitWidth includes the trailing bullet
+                // when scrolling, so loopDistance == title + bullet width.
+                readonly property real loopDistance: titleText.implicitWidth
                 property real scrollX: 0
+
+                // Hidden sizer for the plain title, used purely to
+                // decide whether the title fits. Kept out of the
+                // visible Row so it doesn't affect layout.
+                StyledText {
+                    id: titleSizer
+                    visible: false
+                    text: root.nextTitle
+                    font.pixelSize: Theme.fontSizeSmall
+                }
 
                 Row {
                     spacing: 0
                     anchors.verticalCenter: parent.verticalCenter
                     x: titleClip.needsScrolling
                        ? -titleClip.scrollX
-                       : (titleClip.width - titleClip.titleWidth) / 2
+                       : (titleClip.width - titleText.implicitWidth) / 2
 
                     StyledText {
                         id: titleText
-                        text: root.nextTitle
+                        // Trailing bullet only when we're going to
+                        // marquee — for short titles that fit, render
+                        // the title plain so the static display isn't
+                        // visually cluttered by a dangling separator.
+                        text: titleClip.needsScrolling
+                              ? (root.nextTitle + "  •  ")
+                              : root.nextTitle
                         font.pixelSize: Theme.fontSizeSmall
                         color: root.urgencyColor
                         elide: Text.ElideNone
@@ -275,7 +298,7 @@ PluginComponent {
 
                     StyledText {
                         visible: titleClip.needsScrolling
-                        text: root.nextTitle
+                        text: root.nextTitle + "  •  "
                         font.pixelSize: Theme.fontSizeSmall
                         color: root.urgencyColor
                         elide: Text.ElideNone
@@ -287,8 +310,10 @@ PluginComponent {
                     running: titleClip.needsScrolling
                     loops: Animation.Infinite
                     from: 0
-                    to: titleClip.titleWidth
-                    duration: Math.max(800, titleClip.titleWidth * 80)
+                    to: titleClip.loopDistance
+                    // 80 ms per pixel — readable pace; min 800 ms so a
+                    // barely-overflowing title doesn't whip past.
+                    duration: Math.max(800, titleClip.loopDistance * 80)
                     easing.type: Easing.Linear
                 }
             }

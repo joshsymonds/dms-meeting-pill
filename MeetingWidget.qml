@@ -30,11 +30,10 @@ PluginComponent {
     pluginId: "meetingPill"
 
     // ── Settings ───────────────────────────────────────────────────────
-    // Title truncation budget. 5 chars + "…" = 6 chars fits inside the
-    // 36px pill width at Theme.fontSizeSmall (12px ≈ 6px per char in
-    // Material Sans). Override via pluginData.maxTitleChars if you have
-    // a wider bar or want a different visual balance.
-    property int maxTitleChars: (pluginData && pluginData.maxTitleChars) ? pluginData.maxTitleChars : 5
+    // No truncation — when the title doesn't fit in the pill width it
+    // scrolls (marquee). Static truncation to "Stand…" / "Perm…" was
+    // unhelpful for distinguishing meetings and visually strained the
+    // 36px pill width.
 
     // ── Live state ─────────────────────────────────────────────────────
     property string nextTitle: ""
@@ -77,18 +76,6 @@ PluginComponent {
     }
 
     // ── Helpers ────────────────────────────────────────────────────────
-    function _truncate(s, maxChars) {
-        if (!s)
-            return "";
-        if (s.length <= maxChars)
-            return s;
-        // slice operates on UTF-16 code units — fine for English titles;
-        // CJK/emoji titles may truncate at a visually awkward column,
-        // but the alternative (grapheme-cluster iteration) is overkill
-        // for a 5-char budget.
-        return s.slice(0, maxChars - 1) + "…";
-    }
-
     function _formatCountdown(start) {
         if (!start)
             return "--";
@@ -224,9 +211,13 @@ PluginComponent {
     }
 
     // ── Vertical bar pill ──────────────────────────────────────────────
-    // 3-row: icon + truncated title + countdown. The Column is the
-    // BasePill's content directly (no Item wrapper, no double-wrap) —
-    // same pattern as the bandwidth/gpu pills.
+    // 3-row: icon + scrolling title marquee + countdown. Title row is a
+    // clipped Item containing a StyledText that scrolls horizontally
+    // when its natural width exceeds the pill width. Same animation
+    // shape as DMS's Media widget (Modules/DankBar/Widgets/Media.qml):
+    // pause → scroll → pause → reset → loop. Static truncation in 36px
+    // was unreadable; marquee lets the full title come through over
+    // time at the cost of needing to wait a few seconds.
     verticalBarPill: Component {
         Column {
             spacing: 2
@@ -238,15 +229,63 @@ PluginComponent {
                 anchors.horizontalCenter: parent.horizontalCenter
             }
 
-            StyledText {
-                // Only render the title row when we actually have data —
-                // otherwise the empty StyledText still occupies a row
-                // of vertical space and makes the idle pill look broken.
+            Item {
+                // Marquee clip rectangle. Width = pill width (so the
+                // StyledText inside is what defines scrollable extent);
+                // height = font size so the row is exactly as tall as
+                // one line of text.
                 visible: root.haveData
-                text: root._truncate(root.nextTitle, root.maxTitleChars)
-                font.pixelSize: Theme.fontSizeSmall
-                color: root.urgencyColor
-                anchors.horizontalCenter: parent.horizontalCenter
+                width: parent.width
+                height: titleText.implicitHeight
+                clip: true
+
+                StyledText {
+                    id: titleText
+                    text: root.nextTitle
+                    font.pixelSize: Theme.fontSizeSmall
+                    color: root.urgencyColor
+                    wrapMode: Text.NoWrap
+
+                    // Scroll only when the text doesn't fit. Otherwise
+                    // anchor centered.
+                    readonly property bool needsScrolling: implicitWidth > parent.width
+                    property real scrollOffset: 0
+
+                    anchors.verticalCenter: parent.verticalCenter
+                    x: needsScrolling ? -scrollOffset : (parent.width - implicitWidth) / 2
+
+                    onTextChanged: {
+                        scrollOffset = 0;
+                        scrollAnimation.restart();
+                    }
+
+                    SequentialAnimation {
+                        id: scrollAnimation
+                        running: titleText.needsScrolling
+                        loops: Animation.Infinite
+
+                        PauseAnimation { duration: 1500 }
+                        NumberAnimation {
+                            target: titleText
+                            property: "scrollOffset"
+                            from: 0
+                            to: titleText.implicitWidth - titleText.parent.width + 4
+                            // ~60 ms per pixel — slow enough to read,
+                            // not so slow the pill feels stuck. Min 1s
+                            // so very-short overflows don't tear past.
+                            duration: Math.max(1000, (titleText.implicitWidth - titleText.parent.width + 4) * 60)
+                            easing.type: Easing.Linear
+                        }
+                        PauseAnimation { duration: 1500 }
+                        NumberAnimation {
+                            target: titleText
+                            property: "scrollOffset"
+                            to: 0
+                            duration: 300
+                            easing.type: Easing.OutCubic
+                        }
+                    }
+                }
             }
 
             StyledText {

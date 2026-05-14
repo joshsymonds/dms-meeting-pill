@@ -45,35 +45,36 @@ PluginComponent {
     // tick down naturally even when the underlying JSON hasn't changed.
     property real countdownNow: Date.now()
 
-    // ── Urgency color (drives icon + text tint) ────────────────────────
+    // ── Urgency level ──────────────────────────────────────────────────
     // Single source of truth for "how worried should the user be right
-    // now"; wired to every visual element so the whole pill flashes
-    // through warning → error as the meeting approaches.
-    readonly property color urgencyColor: {
+    // now". Both the icon color and the text color derive from this
+    // level via tiny lookup expressions below, so the two can never
+    // drift in their threshold semantics — earlier iterations had
+    // independent if-chains for color vs. iconColor that happened to
+    // produce identical visual results today but invited a bug the next
+    // time someone tweaked one branch without the other.
+    //
+    // Returns "normal" | "warning" | "error".
+    readonly property string urgencyLevel: {
         if (!root.haveData || !root.nextStart)
-            return Theme.widgetTextColor;
+            return "normal";
         const minutesUntil = (root.nextStart.getTime() - root.countdownNow) / 60000;
-        if (minutesUntil <= 0)
-            return Theme.error;       // currently happening
         if (minutesUntil < 5)
-            return Theme.error;       // <5 min — drop everything
+            return "error";           // <5 min OR currently happening
         if (minutesUntil < 15)
-            return Theme.warning;     // <15 min — start wrapping up
-        return Theme.widgetTextColor;
+            return "warning";         // <15 min — start wrapping up
+        return "normal";
     }
 
-    readonly property color urgencyIconColor: {
-        // Same logic, but fall back to widgetIconColor (which often
-        // differs slightly from widgetTextColor) when not urgent.
-        if (!root.haveData || !root.nextStart)
-            return Theme.widgetIconColor;
-        const minutesUntil = (root.nextStart.getTime() - root.countdownNow) / 60000;
-        if (minutesUntil < 5)
-            return Theme.error;
-        if (minutesUntil < 15)
-            return Theme.warning;
-        return Theme.widgetIconColor;
-    }
+    readonly property color urgencyColor:
+        urgencyLevel === "error"   ? Theme.error
+      : urgencyLevel === "warning" ? Theme.warning
+      :                              Theme.widgetTextColor
+
+    readonly property color urgencyIconColor:
+        urgencyLevel === "error"   ? Theme.error
+      : urgencyLevel === "warning" ? Theme.warning
+      :                              Theme.widgetIconColor
 
     // ── Helpers ────────────────────────────────────────────────────────
     function _formatCountdown(start) {
@@ -180,9 +181,14 @@ PluginComponent {
         // 1 s countdown ticker. Used by urgencyColor and _formatCountdown
         // through root.countdownNow. The FileView handles new-data
         // updates separately on file change.
+        //
+        // Gated on `haveData` so the ticker stops between meetings
+        // (idle state has nothing to count down to and urgencyColor
+        // short-circuits to widgetTextColor anyway). Saves a wakeup per
+        // second when no meetings are upcoming.
         interval: 1000
         repeat: true
-        running: true
+        running: root.haveData
         onTriggered: {
             root.countdownNow = Date.now();
             // The next event's `start` doesn't change between FileView
@@ -205,6 +211,16 @@ PluginComponent {
 
     pillClickAction: () => {
         if (!root.nextUrl)
+            return;
+        // HTTPS allowlist: morgen-fetch sources the URL from a calendar
+        // event's `virtualRoom.url` field, which is attacker-controllable
+        // by anyone who can put an event on the user's calendar. xdg-open
+        // would dispatch `javascript:`, `data:text/html,...`, `file:///`,
+        // or even flag-style strings like `--version` to the user's
+        // browser — most of those are exploitable surfaces. Real meeting
+        // join links are always `https://` (Zoom/Meet/Teams); rejecting
+        // anything else costs nothing.
+        if (!/^https?:\/\//i.test(root.nextUrl))
             return;
         launcher.command = ["xdg-open", root.nextUrl];
         launcher.running = true;
@@ -307,7 +323,14 @@ PluginComponent {
                 }
 
                 NumberAnimation on scrollX {
-                    running: titleClip.needsScrolling
+                    // Also gate on titleClip.visible so the animation
+                    // pauses when the pill is hidden (workspace switch,
+                    // collapsed bar). DMS's Media.qml uses the same
+                    // pattern — Qt's animation driver still ticks
+                    // hidden-but-running animations, so leaving this
+                    // pegged costs a few µs each frame for no visible
+                    // effect.
+                    running: titleClip.needsScrolling && titleClip.visible
                     loops: Animation.Infinite
                     from: 0
                     to: titleClip.loopDistance
@@ -342,9 +365,15 @@ PluginComponent {
             }
 
             StyledText {
+                // Idle state matches the vertical pill: just "--" with
+                // neutral color (urgencyColor falls back to
+                // widgetTextColor when !haveData). The earlier wording
+                // "no upcoming" diverged from the Epic spec's "render
+                // '--' countdown" for idle and left the two layouts
+                // inconsistent.
                 text: root.haveData
                       ? (root._formatCountdown(root.nextStart) + ": " + root.nextTitle)
-                      : "no upcoming"
+                      : "--"
                 font.pixelSize: Theme.barTextSize(root.barThickness, root.barConfig ? root.barConfig.fontScale : 1.0, root.barConfig ? root.barConfig.maximizeWidgetText : false)
                 color: root.urgencyColor
                 anchors.verticalCenter: parent.verticalCenter

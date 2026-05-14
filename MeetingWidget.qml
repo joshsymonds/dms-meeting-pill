@@ -36,10 +36,22 @@ PluginComponent {
     // 36px pill width.
 
     // ── Live state ─────────────────────────────────────────────────────
-    property string nextTitle: ""
-    property var nextStart: null     // JS Date or null
-    property string nextUrl: ""      // empty string when no URL (QML's null vs string mix is awkward)
-    property bool haveData: false
+    // `events` is the full set of future-only events parsed from the JSON,
+    // in chronological order. `currentIdx` is the cursor into it; −1 means
+    // "no current event" (idle). All displayed scalars (nextTitle, nextStart,
+    // nextUrl, haveData) are readonly derivations so the array is the single
+    // source of truth — earlier iterations cached the head in writable
+    // scalars and only refreshed them on file change, which silently failed
+    // when the fetcher stalled and the displayed event's start slipped into
+    // the past (pill showed "now" for hours instead of advancing).
+    property var events: []
+    property int currentIdx: -1
+    readonly property var currentEvent:
+        currentIdx >= 0 && currentIdx < events.length ? events[currentIdx] : null
+    readonly property bool haveData: currentEvent !== null
+    readonly property var nextStart: currentEvent ? new Date(Date.parse(currentEvent.start)) : null
+    readonly property string nextTitle: currentEvent ? (currentEvent.title || "(no title)") : ""
+    readonly property string nextUrl: currentEvent ? (currentEvent.url || "") : ""
 
     // countdownNow ticks every second so the displayed minutes/hours
     // tick down naturally even when the underlying JSON hasn't changed.
@@ -112,35 +124,53 @@ PluginComponent {
             // but cheap to guard). Hold current state until next reload.
             return;
         }
-        if (!Array.isArray(arr) || arr.length === 0) {
+        if (!Array.isArray(arr)) {
             _clear();
             return;
         }
         // morgen-fetch already filters to future events and sorts by
-        // start, so the first array entry is canonically "next". We
-        // double-check the start is still in the future (the JSON could
-        // be a few minutes stale).
+        // start, but we re-filter here defensively: the JSON can be a
+        // few minutes stale, and _advanceIfExpired walks this array
+        // every second expecting future-only contents. Pruning past
+        // entries at parse time keeps that loop short.
         const nowMs = Date.now();
+        const future = [];
         for (const ev of arr) {
             const startMs = Date.parse(ev.start);
             if (isNaN(startMs))
                 continue;
             if (startMs <= nowMs)
                 continue;
-            root.nextTitle = ev.title || "(no title)";
-            root.nextStart = new Date(startMs);
-            root.nextUrl = ev.url || "";
-            root.haveData = true;
-            return;
+            future.push(ev);
         }
-        _clear();
+        root.events = future;
+        root.currentIdx = future.length > 0 ? 0 : -1;
+    }
+
+    function _advanceIfExpired() {
+        // Called every second by the countdown ticker. If the currently
+        // displayed event's start has slipped into the past (fetcher
+        // hasn't rewritten the JSON yet, or a meeting just started while
+        // the pill was showing it), walk forward to the next entry whose
+        // start is still in the future. Exhausting the array drops us
+        // back to idle ("--") — fresher than lying about a past event.
+        if (root.currentIdx < 0)
+            return;
+        const nowMs = Date.now();
+        let i = root.currentIdx;
+        while (i < root.events.length) {
+            const startMs = Date.parse(root.events[i].start);
+            if (!isNaN(startMs) && startMs > nowMs)
+                break;
+            i++;
+        }
+        if (i !== root.currentIdx)
+            root.currentIdx = (i < root.events.length) ? i : -1;
     }
 
     function _clear() {
-        root.nextTitle = "";
-        root.nextStart = null;
-        root.nextUrl = "";
-        root.haveData = false;
+        root.events = [];
+        root.currentIdx = -1;
     }
 
     // ── File watcher ──────────────────────────────────────────────────
@@ -179,22 +209,24 @@ PluginComponent {
 
     Timer {
         // 1 s countdown ticker. Used by urgencyColor and _formatCountdown
-        // through root.countdownNow. The FileView handles new-data
-        // updates separately on file change.
+        // through root.countdownNow. Also calls _advanceIfExpired so the
+        // currently-displayed event rolls over to the next future entry
+        // the moment its start crosses now — without waiting for the
+        // FileView to deliver a new snapshot. With a healthy fetcher the
+        // two converge within minutes; with a stalled fetcher this is
+        // what keeps the pill honest.
         //
-        // Gated on `haveData` so the ticker stops between meetings
-        // (idle state has nothing to count down to and urgencyColor
-        // short-circuits to widgetTextColor anyway). Saves a wakeup per
-        // second when no meetings are upcoming.
+        // Gated on `haveData` so the ticker stops between meetings.
+        // When _advanceIfExpired exhausts the array it sets
+        // currentIdx=-1, which flips haveData false and stops this
+        // Timer — saving wakeups until the next FileView reload
+        // restores a future event.
         interval: 1000
         repeat: true
         running: root.haveData
         onTriggered: {
+            root._advanceIfExpired();
             root.countdownNow = Date.now();
-            // The next event's `start` doesn't change between FileView
-            // reloads but `_formatCountdown` reads `countdownNow`; the
-            // urgencyColor binding will re-evaluate automatically since
-            // it depends on countdownNow. Nothing else to do here.
         }
     }
 

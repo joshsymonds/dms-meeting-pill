@@ -322,22 +322,29 @@ PluginComponent {
                     }
                 }
 
-                NumberAnimation on scrollX {
-                    // Also gate on titleClip.visible so the animation
-                    // pauses when the pill is hidden (workspace switch,
-                    // collapsed bar). DMS's Media.qml uses the same
-                    // pattern — Qt's animation driver still ticks
-                    // hidden-but-running animations, so leaving this
-                    // pegged costs a few µs each frame for no visible
-                    // effect.
+                // 30 Hz Timer-driven marquee. The previous NumberAnimation
+                // was driven by Qt's animation framework at vsync (120 Hz
+                // on this display), which forced two QSGRender threads to
+                // ~10% CPU continuously for an animation showing 3 px of
+                // motion per frame. Throttling to ~30 Hz cuts the repaint
+                // cadence to ~25% without changing the perceived scroll
+                // speed: 33 ms × (1 px / 80 ms) = 0.4125 px/tick, matching
+                // the original Easing.Linear 12.5 px/sec pace.
+                //
+                // Visibility gating preserved from the original — when the
+                // pill is hidden (workspace switch, collapsed bar) the
+                // Timer stops cold instead of ticking invisible work.
+                Timer {
+                    id: marqueeTimer
+                    interval: 33
+                    repeat: true
                     running: titleClip.needsScrolling && titleClip.visible
-                    loops: Animation.Infinite
-                    from: 0
-                    to: titleClip.loopDistance
-                    // 80 ms per pixel — readable pace; min 800 ms so a
-                    // barely-overflowing title doesn't whip past.
-                    duration: Math.max(800, titleClip.loopDistance * 80)
-                    easing.type: Easing.Linear
+                    onTriggered: {
+                        const next = titleClip.scrollX + 0.4125
+                        titleClip.scrollX = next >= titleClip.loopDistance
+                                          ? next - titleClip.loopDistance
+                                          : next
+                    }
                 }
             }
 

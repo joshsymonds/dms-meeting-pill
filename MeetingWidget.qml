@@ -157,15 +157,23 @@ PluginComponent {
         if (root.currentIdx < 0)
             return;
         const nowMs = Date.now();
-        let i = root.currentIdx;
+        // Fast path: the head is still future. This is the steady state
+        // (~98% of ticks during an upcoming meeting countdown); skipping
+        // the loop entirely makes that explicit instead of relying on
+        // the while-loop's first-iteration break.
+        const headStartMs = Date.parse(root.events[root.currentIdx].start);
+        if (!isNaN(headStartMs) && headStartMs > nowMs)
+            return;
+        // Slow path: head expired (or unparseable). Walk forward to the
+        // next future entry.
+        let i = root.currentIdx + 1;
         while (i < root.events.length) {
             const startMs = Date.parse(root.events[i].start);
             if (!isNaN(startMs) && startMs > nowMs)
                 break;
             i++;
         }
-        if (i !== root.currentIdx)
-            root.currentIdx = (i < root.events.length) ? i : -1;
+        root.currentIdx = (i < root.events.length) ? i : -1;
     }
 
     function _clear() {
